@@ -202,7 +202,7 @@
 
   <div class="toolbar">
     <button class="btn btn-primary" onclick="openModal()">+ Adicionar item</button>
-    <button class="btn btn-success" onclick="downloadAllNewPDFs()">📄 PDF dos novos</button>
+    <button class="btn btn-success" onclick="downloadAllNewPDFs()">📄 Concluir novos (PDF)</button>
     <button class="btn" onclick="loadSampleData()">🔄 Exemplo</button>
     <button class="btn" onclick="exportData()">Exportar JSON</button>
     <label class="btn" style="position:relative;overflow:hidden;flex:1;text-align:center;">
@@ -215,7 +215,7 @@
     <span id="batchCount">0 selecionado(s)</span>
     <button class="btn" onclick="batchArchive()">📁 Arquivar</button>
     <button class="btn" onclick="batchUnarchive()">📂 Desarquivar</button>
-    <button class="btn btn-success" onclick="batchPDF()">📄 PDF selec.</button>
+    <button class="btn btn-success" onclick="batchPDF()">📄 Concluir selec.</button>
     <button class="btn btn-danger" onclick="clearSelection()">Limpar</button>
   </div>
 
@@ -263,7 +263,7 @@
     </div>
     <div class="field">
       <label>Fotos ANTES (problema)</label>
-      <input type="file" id="fPhotos" accept="image/*" multiple capture="environment" onchange="previewPhotos(this,'antes')">
+      <input type="file" id="fPhotos" accept="image/*" multiple onchange="previewPhotos(this,'antes')">
       <div class="photo-preview" id="photoPreviewAntes"></div>
     </div>
     <div class="field">
@@ -327,7 +327,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 (function(){
   // ============================
@@ -621,7 +620,7 @@
   function badgeClass(s){ return s==="urgente"?"badge-urgente":s==="atencao"?"badge-atencao":s==="ok"?"badge-ok":"badge-info"; }
   function badgeLabel(s){ return s==="urgente"?"Urgente":s==="atencao"?"Atenção":s==="ok"?"OK":"Info"; }
   function sectionName(s){ return s==="pendencias"?"Pendências":s==="naovistos"?"Não vistos":s==="orcamentos"?"Orçamentos":"Arquivados"; }
-  function escapeHtml(t){ const d=document.createElement("div"); d.textContent=t; return d.innerHTML; }
+  function escapeHtml(t){ const d=document.createElement("div"); d.textContent=String(t==null?"":t); return d.innerHTML; }
 
   function showToast(msg){
     const t = document.getElementById("toast");
@@ -674,7 +673,7 @@
           <button class="btn" onclick="quickAddPhoto(${it.id},'antes')">📷 Antes</button>
           <button class="btn" onclick="quickAddPhoto(${it.id},'depois')">✅ Depois</button>
           <button class="btn" onclick="editItem(${it.id})">✏️ Editar</button>
-          <button class="btn btn-success" onclick="downloadItemPDF(${it.id})">📄 PDF</button>
+          <button class="btn btn-success" onclick="downloadItemPDF(${it.id})">📄 Concluir</button>
           <button class="btn" onclick="toggleArchiveItem(${it.id})">${it.arquivado?'📂 Desarq.':'📁 Arquivar'}</button>
           <button class="btn btn-danger" onclick="deleteItem(${it.id})">🗑️ Remover</button>
         </div>
@@ -746,6 +745,7 @@
   };
   window.closeModal = function(){ document.getElementById("modalOverlay").classList.remove("open"); editingId=null; tempPhotos={antes:[],depois:[]}; };
 
+  // CORREÇÃO: função completa (estava cortada em "canvas.width, canva")
   function processImage(file, cb){
     const reader = new FileReader();
     reader.onload = e=>{
@@ -758,7 +758,7 @@
         canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
         cb(canvas.toDataURL("image/jpeg", 0.75));
       };
-      img.onerror = ()=>cb(e.target.result);
+      img.onerror = ()=>{ alert("Não foi possível ler a imagem."); };
       img.src = e.target.result;
     };
     reader.readAsDataURL(file);
@@ -766,32 +766,24 @@
 
   window.previewPhotos = function(input, tipo){
     const files = Array.from(input.files || []);
-    if(!files.length) return;
-    let done = 0;
     files.forEach(f=>{
-      processImage(f, dataUrl=>{
-        tempPhotos[tipo].push(dataUrl);
-        done++;
-        if(done === files.length){
-          renderTempPreview(tipo);
-          input.value = "";
-        }
+      if(!f.type || !f.type.startsWith("image/")) return;
+      processImage(f, url=>{
+        tempPhotos[tipo].push(url);
+        renderTempPreview(tipo);
       });
     });
+    input.value = "";
   };
 
   function renderTempPreview(tipo){
     const el = document.getElementById(tipo === "antes" ? "photoPreviewAntes" : "photoPreviewDepois");
-    el.innerHTML = tempPhotos[tipo].map((p, i)=>
-      `<div style="position:relative;">
-        <img class="thumb" src="${p}" onclick="openLightbox('${p}')" alt="">
-        <button onclick="removeTempPhoto('${tipo}',${i})" style="position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:none;background:#c00;color:#fff;font-size:13px;line-height:22px;cursor:pointer;">×</button>
-      </div>`
+    el.innerHTML = tempPhotos[tipo].map((p,i)=>
+      `<img class="thumb" src="${p}" onclick="removeTempPhoto('${tipo}',${i})" title="Toque para remover" alt="">`
     ).join("");
   }
-
-  window.removeTempPhoto = function(tipo, idx){
-    tempPhotos[tipo].splice(idx, 1);
+  window.removeTempPhoto = function(tipo, i){
+    tempPhotos[tipo].splice(i, 1);
     renderTempPreview(tipo);
   };
 
@@ -814,19 +806,13 @@
       }
       showToast("Item atualizado!");
     } else {
-      const newId = items.length ? Math.max(...items.map(x=>x.id)) + 1 : 1;
+      const id = items.length ? Math.max(...items.map(x=>x.id)) + 1 : 1;
       items.push({
-        id: newId,
-        section: section,
-        room: room,
-        desc: desc,
-        status: status,
-        photos: tempPhotos.antes.slice(),
-        photosDepois: tempPhotos.depois.slice(),
-        arquivado: false,
-        docBaixado: false
+        id: id, section: section, room: room, desc: desc, status: status,
+        photos: tempPhotos.antes.slice(), photosDepois: tempPhotos.depois.slice(),
+        arquivado: false, docBaixado: false
       });
-      showToast("Item salvo!");
+      showToast("Item adicionado!");
     }
     saveStore();
     closeModal();
@@ -836,14 +822,32 @@
   window.editItem = function(id){ openModal(id); };
 
   window.deleteItem = function(id){
-    const it = items.find(x=>x.id===id);
-    if(!it) return;
-    if(!confirm(`Remover o item "${it.room}"?`)) return;
+    if(!confirm("Remover este item?")) return;
     items = items.filter(x=>x.id!==id);
     selectedIds.delete(id);
     saveStore();
     render();
-    showToast("Item removido.");
+  };
+
+  window.quickAddPhoto = function(id, tipo){
+    const it = items.find(x=>x.id===id);
+    if(!it) return;
+    const inp = document.createElement("input");
+    inp.type = "file";
+    inp.accept = "image/*";
+    if(tipo === "antes") inp.setAttribute("capture", "environment");
+    inp.onchange = ()=>{
+      const f = inp.files && inp.files[0];
+      if(!f) return;
+      processImage(f, url=>{
+        if(tipo === "antes") it.photos.push(url);
+        else it.photosDepois.push(url);
+        saveStore();
+        render();
+        showToast("Foto adicionada!");
+      });
+    };
+    inp.click();
   };
 
   window.toggleArchiveItem = function(id){
@@ -852,35 +856,9 @@
     it.arquivado = !it.arquivado;
     saveStore();
     render();
-    showToast(it.arquivado ? "Item arquivado." : "Item desarquivado.");
   };
 
-  window.quickAddPhoto = function(id, tipo){
-    const it = items.find(x=>x.id===id);
-    if(!it) return;
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.capture = "environment";
-    input.onchange = ()=>{
-      const file = input.files[0];
-      if(!file) return;
-      processImage(file, dataUrl=>{
-        if(tipo === "antes") it.photos.push(dataUrl);
-        else it.photosDepois.push(dataUrl);
-        saveStore();
-        render();
-        showToast("Foto adicionada!");
-      });
-    };
-    input.click();
-  };
-
-  window.openLightbox = function(src){
-    document.getElementById("lightboxImg").src = src;
-    document.getElementById("lightbox").classList.add("open");
-  };
-
+  // ===== Seleção em lote =====
   window.toggleSelect = function(id, checked){
     if(checked) selectedIds.add(id);
     else selectedIds.delete(id);
@@ -889,258 +867,158 @@
 
   function updateBatchBar(){
     const bar = document.getElementById("batchBar");
-    if(selectedIds.size){
-      bar.classList.add("open");
-      document.getElementById("batchCount").textContent = selectedIds.size + " selecionado(s)";
-    } else {
-      bar.classList.remove("open");
-    }
+    document.getElementById("batchCount").textContent = selectedIds.size + " selecionado(s)";
+    bar.classList.toggle("open", selectedIds.size > 0);
   }
 
   window.clearSelection = function(){
-    selectedIds.clear();
+    selectedIds = new Set();
     render();
   };
 
   window.batchArchive = function(){
-    items.forEach(it=>{ if(selectedIds.has(it.id)) it.arquivado = true; });
-    selectedIds.clear();
+    let n = 0;
+    items.forEach(it=>{ if(selectedIds.has(it.id)){ it.arquivado = true; n++; } });
     saveStore();
-    render();
-    showToast("Itens arquivados!");
+    clearSelection();
+    showToast(n + " item(ns) arquivado(s).");
   };
 
   window.batchUnarchive = function(){
-    items.forEach(it=>{ if(selectedIds.has(it.id)) it.arquivado = false; });
-    selectedIds.clear();
+    let n = 0;
+    items.forEach(it=>{ if(selectedIds.has(it.id)){ it.arquivado = false; n++; } });
     saveStore();
-    render();
-    showToast("Itens desarquivados!");
+    clearSelection();
+    showToast(n + " item(ns) desarquivado(s).");
   };
 
-  // ============================
-  // PDF (jsPDF via CDN)
-  // ============================
-  function getJsPDF(){
-    if(window.jspdf && window.jspdf.jsPDF) return window.jspdf.jsPDF;
-    alert("Biblioteca de PDF não carregada. Verifique a conexão com a internet e recarregue a página.");
-    return null;
+  // ===== Geração de documento (imprimir / salvar como PDF) =====
+  function generateDocHTML(list){
+    const p = getProject(currentProjectId) || { nome: "Projeto", cnpj: "", endereco: "" };
+    const rows = list.map(it=>{
+      const antes = (it.photos||[]).map(u=>`<img src="${u}" style="width:130px;border-radius:8px;margin:4px;border:1px solid #ddd;">`).join("");
+      const depois = (it.photosDepois||[]).map(u=>`<img src="${u}" style="width:130px;border-radius:8px;margin:4px;border:1px solid #ddd;">`).join("");
+      return `
+      <div style="border:1px solid #ddd;border-radius:10px;padding:12px;margin-bottom:12px;page-break-inside:avoid;">
+        <h3 style="margin:0 0 4px;font-size:16px;">${escapeHtml(it.room)} <span style="font-size:12px;color:#888;font-weight:normal;">(${sectionName(it.section)})</span></h3>
+        <div style="font-size:12px;color:#555;margin-bottom:6px;">Status: <b>${badgeLabel(it.status)}</b> — Item #${it.id}</div>
+        <p style="margin:6px 0;white-space:pre-wrap;">${escapeHtml(it.desc)}</p>
+        ${antes ? `<div style="margin-top:6px;"><b style="font-size:12px;">📷 Antes:</b><br>${antes}</div>` : ""}
+        ${depois ? `<div style="margin-top:6px;"><b style="font-size:12px;">✅ Depois:</b><br>${depois}</div>` : ""}
+      </div>`;
+    }).join("");
+    return `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"><title>Relatório de Manutenção</title></head>
+<body style="font-family:Arial,sans-serif;max-width:720px;margin:24px auto;color:#111;padding:0 12px;">
+  <h1 style="font-size:20px;margin-bottom:2px;">🔧 Controle de Manutenção — ${escapeHtml(p.nome)}</h1>
+  <p style="color:#777;font-size:13px;margin-bottom:16px;">
+    ${p.cnpj ? "CNPJ: " + escapeHtml(p.cnpj) + " | " : ""}${p.endereco ? "📍 " + escapeHtml(p.endereco) + " | " : ""}
+    Gerado em ${new Date().toLocaleString("pt-BR")}
+  </p>
+  ${rows}
+</body></html>`;
   }
 
-  
-  function saveDoc(doc, filename){
-    try{
-      const blob = doc.output("blob");
-      const url = URL.createObjectURL(blob);
-      const win = window.open(url, "_blank");
-      if(!win){
-        // Popup bloqueado -> força o download
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }
-      setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
-      return true;
-    }catch(e){
-      try{
-        doc.save(filename);
-        return true;
-      }catch(e2){
-        alert("Erro ao gerar o PDF:\n" + e2.message);
-        return false;
-      }
+  function printList(list, markDone){
+    if(!list.length){ showToast("Nenhum item selecionado."); return; }
+    const w = window.open("", "_blank");
+    if(!w){ alert("O navegador bloqueou a janela. Permita pop-ups para gerar o PDF."); return; }
+    w.document.open();
+    w.document.write(generateDocHTML(list));
+    w.document.close();
+    w.focus();
+    setTimeout(()=>{ try{ w.print(); }catch(e){} }, 600);
+    if(markDone){
+      list.forEach(it=>{ it.docBaixado = true; });
+      saveStore();
+      render();
     }
-  }
-
-  function buildItemPDF(it){
-    const JsPDF = getJsPDF();
-    if(!JsPDF) return null;
-    const p = getProject(currentProjectId) || {};
-    const doc = new JsPDF({ unit: "mm", format: "a4" });
-    const pageW = doc.internal.pageSize.getWidth();
-    const margin = 14;
-    let y = 18;
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(15);
-    doc.setTextColor(20, 20, 20);
-    doc.text("Relatório de Manutenção", margin, y);
-    y += 7;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(110);
-    let sub = [];
-    if(p.nome) sub.push(p.nome);
-    if(p.cnpj) sub.push("CNPJ: " + p.cnpj);
-    if(p.endereco) sub.push(p.endereco);
-    if(sub.length){ doc.text(sub.join("  |  "), margin, y); y += 5; }
-    doc.text("Emitido em: " + new Date().toLocaleString("pt-BR"), margin, y);
-    y += 6;
-    doc.setDrawColor(220);
-    doc.line(margin, y, pageW - margin, y);
-    y += 8;
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.setTextColor(20);
-    doc.text(it.room, margin, y);
-    y += 6;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(110);
-    doc.text("Seção: " + sectionName(it.section) + "   |   Status: " + badgeLabel(it.status) + "   |   Item #" + it.id, margin, y);
-    y += 8;
-
-    doc.setFontSize(11);
-    doc.setTextColor(40);
-    const lines = doc.splitTextToSize(it.desc, pageW - margin * 2);
-    doc.text(lines, margin, y);
-    y += lines.length * 5 + 4;
-
-    function addPhotos(photos, label){
-      if(!photos || !photos.length) return;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.setTextColor(20);
-      if(y > 250){ doc.addPage(); y = 18; }
-      doc.text(label, margin, y);
-      y += 3;
-      const imgW = (pageW - margin * 2 - 8) / 2;
-      let x = margin;
-      photos.forEach(ph=>{
-        try{
-          if(y + imgW * 0.75 > 285){ doc.addPage(); y = 18; x = margin; }
-          doc.addImage(ph, "JPEG", x, y, imgW, imgW * 0.75);
-          x += imgW + 8;
-          if(x + imgW > pageW - margin + 1){ x = margin; y += imgW * 0.75 + 6; }
-        }catch(e){}
-      });
-      if(x !== margin) y += imgW * 0.75 + 6;
-      y += 4;
-    }
-
-    addPhotos(it.photos, "Fotos ANTES:");
-    addPhotos(it.photosDepois, "Fotos DEPOIS:");
-
-    return doc;
-  }
-
-  function pdfFileName(it){
-    const safe = it.room.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_");
-    return "manutencao_" + safe + "_" + it.id + ".pdf";
   }
 
   window.downloadItemPDF = function(id){
     const it = items.find(x=>x.id===id);
     if(!it) return;
-    const doc = buildItemPDF(it);
-    if(!doc) return;
-    if(!saveDoc(doc, pdfFileName(it))) return;
-    it.docBaixado = true;
-    saveStore();
-    render();
-    showToast("PDF gerado!");
-  };
-
-  window.batchPDF = function(){
-    const sel = items.filter(it=>selectedIds.has(it.id));
-    if(!sel.length){ alert("Selecione pelo menos um item."); return; }
-    sel.forEach(it=>{
-      const doc = buildItemPDF(it);
-      if(doc && saveDoc(doc, pdfFileName(it))){
-        it.docBaixado = true;
-      }
-    });
-    selectedIds.clear();
-    saveStore();
-    render();
-    showToast(sel.length + " PDF(s) gerado(s)!");
+    printList([it], true);
   };
 
   window.downloadAllNewPDFs = function(){
-    const novos = items.filter(it=>!it.docBaixado && !it.arquivado);
-    if(!novos.length){ alert("Não há itens novos (todos já têm PDF)."); return; }
-    if(!confirm("Gerar PDF de " + novos.length + " item(ns) novo(s)?")) return;
-    novos.forEach(it=>{
-      const doc = buildItemPDF(it);
-      if(doc && saveDoc(doc, pdfFileName(it))){
-        it.docBaixado = true;
-      }
-    });
-    saveStore();
-    render();
-    showToast(novos.length + " PDF(s) gerado(s)!");
+    const list = items.filter(it=>!it.docBaixado && !it.arquivado);
+    if(!list.length){ showToast("Nenhum item novo para concluir."); return; }
+    printList(list, true);
   };
 
-  // ============================
-  // Importar / Exportar / Exemplo
-  // ============================
+  window.batchPDF = function(){
+    const list = items.filter(it=>selectedIds.has(it.id));
+    if(!list.length){ showToast("Selecione pelo menos um item."); return; }
+    printList(list, true);
+    clearSelection();
+  };
+
+  window.loadSampleData = function(){
+    if(!confirm("Carregar dados de exemplo? Isso SUBSTITUI os itens atuais deste local.")) return;
+    items = JSON.parse(JSON.stringify(DEFAULT_ITEMS));
+    selectedIds = new Set();
+    saveStore();
+    render();
+    showToast("Dados de exemplo carregados.");
+  };
+
   window.exportData = function(){
     const blob = new Blob([JSON.stringify(items, null, 1)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
+    const p = getProject(currentProjectId);
     a.href = url;
-    a.download = "manutencao_itens_" + new Date().toISOString().slice(0,10) + ".json";
+    a.download = "itens_" + (p ? p.nome.replace(/[^\wÀ-ÿ]+/g, "_") : "projeto") + ".json";
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
-    showToast("Arquivo salvo na pasta Downloads!");
+    setTimeout(()=>{ URL.revokeObjectURL(url); }, 2000);
+    showToast("Exportado!");
   };
 
   window.importData = function(input){
     const file = input.files[0];
     if(!file) return;
     const reader = new FileReader();
-    reader.onload = function(e){
+    reader.onload = e=>{
       try{
         const data = JSON.parse(e.target.result);
         if(!Array.isArray(data)){ alert("Arquivo inválido."); return; }
-        if(!confirm("Importar " + data.length + " item(ns)? Os dados atuais serão SUBSTITUÍDOS.")) return;
-        data.forEach(it=>{
+        if(!confirm("Importar itens? Os itens ATUAIS deste local serão substituídos.")) return;
+        items = data;
+        items.forEach(it=>{
           if(!Array.isArray(it.photos)) it.photos = [];
           if(!Array.isArray(it.photosDepois)) it.photosDepois = [];
-          if(typeof it.docBaixado === "undefined") it.docBaixado = !!it.pdfBaixado;
+          if(typeof it.docBaixado === "undefined") it.docBaixado = false;
         });
-        items = data;
         selectedIds = new Set();
         saveStore();
         render();
-        showToast("Dados importados!");
-      }catch(err){ alert("Erro ao importar: " + err.message); }
+        showToast("Itens importados!");
+      }catch(err){ alert("Erro ao importar o arquivo."); }
     };
     reader.readAsText(file);
     input.value = "";
   };
 
-  window.loadSampleData = function(){
-    if(!confirm("Carregar os dados de EXEMPLO? Os itens atuais serão SUBSTITUÍDOS.")) return;
-    items = JSON.parse(JSON.stringify(DEFAULT_ITEMS));
-    selectedIds = new Set();
-    saveStore();
-    render();
-    showToast("Dados de exemplo carregados!");
+  window.openLightbox = function(src){
+    document.getElementById("lightboxImg").src = src;
+    document.getElementById("lightbox").classList.add("open");
   };
 
-  // ============================
-  // Abas
-  // ============================
-  document.querySelectorAll(".tab").forEach(tab=>{
-    tab.addEventListener("click", ()=>{
+  // ===== Abas =====
+  document.querySelectorAll(".tab").forEach(function(tab){
+    tab.addEventListener("click", function(){
       document.querySelectorAll(".tab").forEach(t=>t.setAttribute("aria-selected","false"));
       tab.setAttribute("aria-selected","true");
       document.querySelectorAll(".section").forEach(s=>s.classList.remove("active"));
-      document.getElementById(tab.dataset.tab).classList.add("active");
-      window.scrollTo(0,0);
+      const target = document.getElementById(tab.dataset.tab);
+      if(target) target.classList.add("active");
     });
   });
 
-  // ============================
   // Inicialização
-  // ============================
   renderHome();
 })();
 </script>
