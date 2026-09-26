@@ -117,6 +117,7 @@
     .row-actions button { flex: 1 1 28%; font-size: 12px; }
   }
 </style>
+<base target="_blank">
 </head>
 <body>
 
@@ -201,7 +202,7 @@
 
   <div class="toolbar">
     <button class="btn btn-primary" onclick="openModal()">+ Adicionar item</button>
-    <button class="btn btn-success" onclick="downloadAllNewPDFs()">📄 Concluir novos (PDF)</button>
+    <button class="btn btn-success" onclick="downloadAllNewPDFs()">📄 PDF dos novos</button>
     <button class="btn" onclick="loadSampleData()">🔄 Exemplo</button>
     <button class="btn" onclick="exportData()">Exportar JSON</button>
     <label class="btn" style="position:relative;overflow:hidden;flex:1;text-align:center;">
@@ -214,7 +215,7 @@
     <span id="batchCount">0 selecionado(s)</span>
     <button class="btn" onclick="batchArchive()">📁 Arquivar</button>
     <button class="btn" onclick="batchUnarchive()">📂 Desarquivar</button>
-    <button class="btn btn-success" onclick="batchPDF()">📄 Concluir selec.</button>
+    <button class="btn btn-success" onclick="batchPDF()">📄 PDF selec.</button>
     <button class="btn btn-danger" onclick="clearSelection()">Limpar</button>
   </div>
 
@@ -673,7 +674,7 @@
           <button class="btn" onclick="quickAddPhoto(${it.id},'antes')">📷 Antes</button>
           <button class="btn" onclick="quickAddPhoto(${it.id},'depois')">✅ Depois</button>
           <button class="btn" onclick="editItem(${it.id})">✏️ Editar</button>
-          <button class="btn btn-success" onclick="downloadItemPDF(${it.id})">📄 Concluir</button>
+          <button class="btn btn-success" onclick="downloadItemPDF(${it.id})">📄 PDF</button>
           <button class="btn" onclick="toggleArchiveItem(${it.id})">${it.arquivado?'📂 Desarq.':'📁 Arquivar'}</button>
           <button class="btn btn-danger" onclick="deleteItem(${it.id})">🗑️ Remover</button>
         </div>
@@ -926,6 +927,34 @@
     return null;
   }
 
+  
+  function saveDoc(doc, filename){
+    try{
+      const blob = doc.output("blob");
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, "_blank");
+      if(!win){
+        // Popup bloqueado -> força o download
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+      return true;
+    }catch(e){
+      try{
+        doc.save(filename);
+        return true;
+      }catch(e2){
+        alert("Erro ao gerar o PDF:\n" + e2.message);
+        return false;
+      }
+    }
+  }
+
   function buildItemPDF(it){
     const JsPDF = getJsPDF();
     if(!JsPDF) return null;
@@ -938,7 +967,7 @@
     doc.setFont("helvetica", "bold");
     doc.setFontSize(15);
     doc.setTextColor(20, 20, 20);
-    doc.text(projIcon(p) + " Relatório de Manutenção", margin, y);
+    doc.text("Relatório de Manutenção", margin, y);
     y += 7;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
@@ -1009,7 +1038,7 @@
     if(!it) return;
     const doc = buildItemPDF(it);
     if(!doc) return;
-    doc.save(pdfFileName(it));
+    if(!saveDoc(doc, pdfFileName(it))) return;
     it.docBaixado = true;
     saveStore();
     render();
@@ -1021,8 +1050,7 @@
     if(!sel.length){ alert("Selecione pelo menos um item."); return; }
     sel.forEach(it=>{
       const doc = buildItemPDF(it);
-      if(doc){
-        doc.save(pdfFileName(it));
+      if(doc && saveDoc(doc, pdfFileName(it))){
         it.docBaixado = true;
       }
     });
@@ -1038,8 +1066,7 @@
     if(!confirm("Gerar PDF de " + novos.length + " item(ns) novo(s)?")) return;
     novos.forEach(it=>{
       const doc = buildItemPDF(it);
-      if(doc){
-        doc.save(pdfFileName(it));
+      if(doc && saveDoc(doc, pdfFileName(it))){
         it.docBaixado = true;
       }
     });
